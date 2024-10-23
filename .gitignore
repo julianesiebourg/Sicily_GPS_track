@@ -5,6 +5,7 @@
 # Session Data files
 .RData
 .RDataTmp
+*.Rproj
 
 # User-specific files
 .Ruserdata
@@ -14,6 +15,7 @@
 
 # Output files from R CMD build
 /*.tar.gz
+/*.html
 
 # Output files from R CMD check
 /*.Rcheck/
