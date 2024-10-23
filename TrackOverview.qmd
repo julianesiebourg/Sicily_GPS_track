@@ -1,0 +1,207 @@
+---
+title: "Sicily Sailing GPS track summary"
+author: jsp
+date: today
+format: 
+  html:
+    code-fold: true
+    toc: true
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+#| include: false
+library(XML)
+library(lubridate)
+library(celestial)
+library(leaflet)
+library(tidyverse)
+library(traipse)
+```
+
+# Track loading and formatting
+
+The xml file with the navionics tracks is parsed using the {XML} package.
+
+* Coordinates, time and speed are extracted.
+* Speed is converted from m/s to knots 
+* COG is calculated as consecutive bearings from a thinned 10min dataset
+* Distance is calculated for
+
+```{r}
+gpx_parsed <- htmlTreeParse(file = "Sicily2021Tracks", useInternalNodes = TRUE)
+
+coords <- xpathSApply(doc = gpx_parsed, path = "//trkpt", fun = xmlAttrs)
+elevation <- xpathSApply(doc = gpx_parsed, path = "//trkpt/ele", fun = xmlValue)
+date_time <- xpathSApply(doc = gpx_parsed, path = "//trkpt/time", fun = xmlValue)
+speed <- xpathSApply(doc = gpx_parsed, path = "//trkpt/extensions/navionics_speed", fun = xmlValue)
+
+
+df <- data.frame(
+  lat = as.numeric(coords["lat", ]),
+  lon = as.numeric(coords["lon", ]),
+  elevation = as.numeric(elevation),
+  date = lubridate::as_date(date_time),
+  time = lubridate::parse_date_time(date_time, "Y-m-d*H:M:S"),
+  kts = as.numeric(speed) * 1.944) |> # convert from m/s to knots 
+  mutate(
+    dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
+  )
+df$dist_segment[1] <- 0
+
+# outlier check
+outlier <- which(df$dist_segment > .5)
+outlier_area <- c(outlier, outlier-1) |> sort()
+
+df <- df |>
+  mutate(dist = cumsum(dist_segment)) |>
+  group_by(date) |>
+  mutate(dist_day = cumsum(dist_segment)) |> 
+  ungroup()
+
+df_1min <- df |>
+  dplyr::filter(second(time) < 1) |>
+  mutate(cog = track_bearing(lat, lon),
+         cog = ifelse(cog < 0, cog + 360, cog)
+  )
+
+df_10min <- df |>
+  dplyr::filter(second(time) <1, minute(time) %% 10 == 0) |>
+  mutate(cog = track_bearing(lat, lon),
+         cog = ifelse(cog < 0, cog + 360, cog)
+         )
+```
+
+```{r, include=FALSE}
+rm(coords, elevation, date_time, spees)
+gc()
+```
+
+::: {.panel-tabset}
+
+## hide
+## example lines
+
+```{r}
+head(df, 5)
+tail(df, 5)
+```
+
+:::
+
+extract full hours
+
+```{r}
+df_1hour <- df_10min |> dplyr::filter(minute(time) == 0, second(time) < 1) 
+```
+
+# Overview plot
+
+Markers are the positions at the full hour for approximate logbook entries.
+
+::: {.panel-tabset}
+
+## Minute wise data
+
+```{r}
+#| fig-width: 5
+#| fig-height: 5.5
+
+leaflet() |>
+  addTiles() |>
+  addPolylines(data = df_1min, lat = ~lat, lng = ~lon, 
+               color = "#000000", opacity = 0.8, weight = 3) |>
+  # leaflet::addCircleMarkers(data = df_hour, lat = ~lat, lng = ~lon, 
+  #                           color = "red") |>
+  leaflet::addAwesomeMarkers(data = df_1hour, lat = ~lat, lng = ~lon,
+                               label = ~as.character(hour(time)))
+```
+
+## Full data
+
+```{r}
+#| fig-width: 5
+#| fig-height: 5.5
+
+leaflet() |>
+  addTiles() |>
+  addPolylines(data = df, lat = ~lat, lng = ~lon, 
+               color = "#000000", opacity = 0.8, weight = 3) |>
+  leaflet::addAwesomeMarkers(data = df_1hour, lat = ~lat, lng = ~lon,
+                                label = ~as.character(hour(time))) |>
+  leaflet::addAwesomeMarkers(data = df[outlier_area, ], lat = ~lat, lng = ~lon,
+                               label = ~as.character(hour(time)), 
+                             icon = awesomeIcons(icon = 'ios-close', 
+                                                 iconColor = 'black',
+                                                 library = 'ion',
+                                                 markerColor = 'red'))
+```
+
+:::
+
+# Hourly log book
+
+```{r}
+df_1hour |>
+  mutate(latitude = deg2dms(lat, type = "cat"),
+         longitude = deg2dms(lon, type = "cat"),
+         # add distance
+         across(c(cog, kts, dist), \(x) round(x, 1))
+         ) |>
+  select(date, time, latitude, longitude, cog, kts) |>
+  gt::gt(groupname_col = "date", row_group_as_column = TRUE)
+```
+
+# COG 
+
+:::{.panel-tabset}
+## 10 min thinning
+```{r fig.width=8, fig.height=3}
+df_10min |>
+  ggplot(aes(x = time, y = cog)) + geom_point() + geom_line()
+```
+
+## 1min thinning
+```{r fig.width=8, fig.height=3}
+df_1min |>
+  ggplot(aes(x = time, y = cog)) + geom_point() + geom_line()
+```
+:::
+
+# Distance
+
+Checking Cumulative Miles in total and per day.
+The full track shows missing segments, marked in red in the full data route above.
+
+:::{.panel-tabset}
+
+## 10 min thinning
+```{r fig.width=8, fig.height=3}
+df_10min |>
+  ggplot(aes(x = time, y = dist)) + geom_point() + geom_line()
+
+df_10min |>
+  ggplot(aes(x = time, y = dist_day)) + geom_point() + geom_line()
+```
+
+## 1min thinning
+```{r fig.width=8, fig.height=3}
+df_1min |>
+  ggplot(aes(x = time, y = dist)) + geom_point() + geom_line()
+
+df_10min |>
+  ggplot(aes(x = time, y = dist_day)) + geom_point() + geom_line()
+```
+
+## full data
+missing segments
+
+```{r fig.width=8, fig.height=3}
+df |>
+  ggplot(aes(x = time, y = dist_segment)) + geom_point() + geom_line()
+
+```
+
+:::
