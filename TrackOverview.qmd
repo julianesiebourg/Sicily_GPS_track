@@ -23,12 +23,12 @@ library(traipse)
 
 # Track loading and formatting
 
-The xml file with the navionics tracks is parsed using the {XML} package.
+The xml file with the navionics tracks is parsed.
 
 -   Coordinates, time and speed are extracted.
 -   Speed is converted from m/s to knots
 -   COG is calculated as consecutive bearings from a thinned 10min dataset
--   Distance is calculated for
+-   Distance is calculated for generated for the total distance and cumulative per day
 
 ```{r}
 gpx_parsed <- htmlTreeParse(file = "Sicily2021Tracks", useInternalNodes = TRUE)
@@ -90,15 +90,20 @@ tail(df, 5)
 ```
 :::
 
-extract full hours
+Extract full hour data.
 
 ```{r}
-df_1hour <- df_10min |> dplyr::filter(minute(time) == 0, second(time) < 1) 
+df_1hour <- df_10min |> mutate(hour = hour(time)) |>
+  group_by(date, hour) |>
+  slice(1) |>
+  ungroup() |> arrange(time)
+  #dplyr::filter(minute(time) == 0, second(time) < 1) 
 ```
 
 # Overview plot
 
-Markers are the positions at the full hour for approximate logbook entries.
+Blue markers are the positions at the full hour for approximate logbook entries.
+Red markers show beginning and end of missing segments.
 
 ::: panel-tabset
 ## Minute wise data
@@ -111,10 +116,14 @@ leaflet() |>
   addTiles() |>
   addPolylines(data = df_1min, lat = ~lat, lng = ~lon, 
                color = "#000000", opacity = 0.8, weight = 3) |>
-  # leaflet::addCircleMarkers(data = df_hour, lat = ~lat, lng = ~lon, 
-  #                           color = "red") |>
-  leaflet::addAwesomeMarkers(data = df_1hour, lat = ~lat, lng = ~lon,
-                               label = ~as.character(hour(time)))
+  leaflet::addAwesomeMarkers(
+    data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour(time))) |>
+  leaflet::addAwesomeMarkers(data = df[outlier_area, ], lat = ~lat, lng = ~lon,
+                               label = ~as.character(hour(time)), 
+                             icon = awesomeIcons(icon = 'ios-close', 
+                                                 iconColor = 'black',
+                                                 library = 'ion',
+                                                 markerColor = 'red')) 
 ```
 
 ## Full data
@@ -127,14 +136,13 @@ leaflet() |>
   addTiles() |>
   addPolylines(data = df, lat = ~lat, lng = ~lon, 
                color = "#000000", opacity = 0.8, weight = 3) |>
-  leaflet::addAwesomeMarkers(data = df_1hour, lat = ~lat, lng = ~lon,
-                                label = ~as.character(hour(time))) |>
-  leaflet::addAwesomeMarkers(data = df[outlier_area, ], lat = ~lat, lng = ~lon,
-                               label = ~as.character(hour(time)), 
-                             icon = awesomeIcons(icon = 'ios-close', 
-                                                 iconColor = 'black',
-                                                 library = 'ion',
-                                                 markerColor = 'red'))
+  leaflet::addAwesomeMarkers(
+    data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour)) |>
+  leaflet::addAwesomeMarkers(
+    data = df[outlier_area, ], lat = ~lat, lng = ~lon,
+    label = ~as.character(hour(time)), 
+    icon = awesomeIcons(icon = 'ios-close', iconColor = 'black',
+                        library = 'ion', markerColor = 'red'))
 ```
 :::
 
@@ -147,7 +155,7 @@ df_1hour |>
          # add distance
          across(c(cog, kts, dist), \(x) round(x, 1))
          ) |>
-  select(date, time, latitude, longitude, cog, kts) |>
+  select(date, time, latitude, longitude, cog, kts, dist_day, dist) |>
   gt::gt(groupname_col = "date", row_group_as_column = TRUE)
 ```
 
@@ -157,6 +165,7 @@ df_1hour |>
 ## 10 min thinning
 
 ```{r fig.width=8, fig.height=3}
+#| warning: false
 df_10min |>
   ggplot(aes(x = time, y = cog)) + geom_point() + geom_line()
 ```
@@ -164,6 +173,7 @@ df_10min |>
 ## 1min thinning
 
 ```{r fig.width=8, fig.height=3}
+#| warning: false
 df_1min |>
   ggplot(aes(x = time, y = cog)) + geom_point() + geom_line()
 ```
@@ -177,17 +187,9 @@ Checking Cumulative Miles in total and per day. The full track shows missing seg
 ## 10 min thinning
 
 ```{r fig.width=8, fig.height=3}
-df_10min |>
-  ggplot(aes(x = time, y = dist)) + geom_point() + geom_line()
+#| warning: false
 
 df_10min |>
-  ggplot(aes(x = time, y = dist_day)) + geom_point() + geom_line()
-```
-
-## 1min thinning
-
-```{r fig.width=8, fig.height=3}
-df_1min |>
   ggplot(aes(x = time, y = dist)) + geom_point() + geom_line()
 
 df_10min |>
@@ -199,8 +201,8 @@ df_10min |>
 missing segments
 
 ```{r fig.width=8, fig.height=3}
+#| warning: false
 df |>
   ggplot(aes(x = time, y = dist_segment)) + geom_point() + geom_line()
-
 ```
 :::
