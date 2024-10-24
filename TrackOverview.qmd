@@ -31,6 +31,12 @@ The xml file with the navionics tracks is parsed.
 -   Distance is calculated for generated for the total distance and cumulative per day
 
 ```{r}
+# temp <- tempfile(fileext = ".zip")
+# download.file("https://drive.google.com/drive/folders/1FlAM74hAPtFC3qIcZF5nQ03UK-WP3hZc&export=download",
+#   temp)
+# out <- unzip(temp, exdir = tempdir())
+# gpx_parsed <- htmlTreeParse(file = out[14], useInternalNodes = TRUE)
+
 gpx_parsed <- htmlTreeParse(file = "Sicily2021Tracks", useInternalNodes = TRUE)
 
 coords <- xpathSApply(doc = gpx_parsed, path = "//trkpt", fun = xmlAttrs)
