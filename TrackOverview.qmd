@@ -56,7 +56,7 @@ df <- data.frame(
   lon = as.numeric(coords["lon", ]),
   elevation = as.numeric(elevation),
   date = lubridate::as_date(date_time),
-  time = lubridate::parse_date_time(date_time, "Y-m-d*H:M:S"),
+  time = lubridate::parse_date_time(date_time, "Y-m-d*H:M:S") + hours(2), #switch timezone
   kts = as.numeric(speed) * 1.944) |> # convert from m/s to knots 
   mutate(
     dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
