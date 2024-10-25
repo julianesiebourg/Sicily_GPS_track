@@ -57,38 +57,29 @@ df <- data.frame(
   mutate(
     dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
   )
-df$dist_segment[1] <- 0
-
 # outlier check
 outlier <- which(df$dist_segment > .5)
 outlier_area <- c(outlier, outlier-1) |> sort()
-
-df <- df |>
-  mutate(dist = cumsum(dist_segment) |> round(digits = 1)) |>
-  group_by(date) |>
-  mutate(dist_day = cumsum(dist_segment) |> round(digits = 1)) |> 
-  ungroup()
 
 df_1min <- df |>
   dplyr::filter(second(time) < 1) |>
   mutate(cog = track_bearing(lat, lon),
          cog = ifelse(cog < 0, cog + 360, cog)
-  )
-
-df_10min <- df |>
-  dplyr::filter(second(time) <1, minute(time) %% 10 == 0) |>
-  mutate(cog = track_bearing(lat, lon),
-         cog = ifelse(cog < 0, cog + 360, cog)
-         ) |>
+  ) |>
   mutate(
     dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
   )
-df_10min$dist_segment[1] <- 0
-df_10min <- df_10min |>
-  mutate(dist_10min = cumsum(dist_segment) |> round(digits = 1)) |>
+df_1min$dist_segment[1] <- 0
+df_1min <- df_1min |>
+  mutate(dist = cumsum(dist_segment) |> round(digits = 1)) |>
   group_by(date) |>
-  mutate(dist_day_10min = cumsum(dist_segment) |> round(digits = 1)) |> 
+  mutate(dist_day = cumsum(dist_segment) |> round(digits = 1)) |> 
   ungroup()
+
+df_10min <- df_1min |>
+  dplyr::filter(second(time) <1, minute(time) %% 10 == 0) |>
+  mutate(cog = track_bearing(lat, lon),
+         cog = ifelse(cog < 0, cog + 360, cog)) 
 ```
 
 ```{r, include=FALSE}
@@ -135,7 +126,7 @@ leaflet() |>
   leaflet::addAwesomeMarkers(
     data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour(time))) |>
   leaflet::addAwesomeMarkers(data = df[outlier_area, ], lat = ~lat, lng = ~lon,
-                               label = ~as.character(hour(time)), 
+                             label = ~as.character(hour(time)), 
                              icon = awesomeIcons(icon = 'ios-close', 
                                                  iconColor = 'black',
                                                  library = 'ion',
