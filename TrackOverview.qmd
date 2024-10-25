@@ -19,6 +19,8 @@ library(celestial)
 library(leaflet)
 library(tidyverse)
 library(traipse)
+
+theme_set(theme_bw())
 ```
 
 # Track loading and formatting
@@ -62,9 +64,9 @@ outlier <- which(df$dist_segment > .5)
 outlier_area <- c(outlier, outlier-1) |> sort()
 
 df <- df |>
-  mutate(dist = cumsum(dist_segment)) |>
+  mutate(dist = cumsum(dist_segment) |> round(digits = 1)) |>
   group_by(date) |>
-  mutate(dist_day = cumsum(dist_segment)) |> 
+  mutate(dist_day = cumsum(dist_segment) |> round(digits = 1)) |> 
   ungroup()
 
 df_1min <- df |>
@@ -108,8 +110,7 @@ df_1hour <- df_10min |> mutate(hour = hour(time)) |>
 
 # Overview plot
 
-Blue markers are the positions at the full hour for approximate logbook entries.
-Red markers show beginning and end of missing segments.
+Blue markers are the positions at the full hour for approximate logbook entries. Red markers show beginning and end of missing segments.
 
 ::: panel-tabset
 ## Minute wise data
@@ -161,8 +162,12 @@ df_1hour |>
          # add distance
          across(c(cog, kts, dist), \(x) round(x, 1))
          ) |>
+  mutate(time = sprintf("%02d:%02d", hour(time), minute(time)),
+         date = str_remove(as.character(date), "^[0-9]*-"))|>
   select(date, time, latitude, longitude, cog, kts, dist_day, dist) |>
-  gt::gt(groupname_col = "date", row_group_as_column = TRUE)
+  gt::gt() |>
+  gt::opt_interactive(use_text_wrapping = FALSE) |>
+  gt::cols_width(dplyr::any_of(c("latitude", "longitude")) ~ gt::px(150))
 ```
 
 # COG
