@@ -79,7 +79,16 @@ df_10min <- df |>
   dplyr::filter(second(time) <1, minute(time) %% 10 == 0) |>
   mutate(cog = track_bearing(lat, lon),
          cog = ifelse(cog < 0, cog + 360, cog)
-         )
+         ) |>
+  mutate(
+    dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
+  )
+df_10min$dist_segment[1] <- 0
+df_10min <- df_10min |>
+  mutate(dist_10min = cumsum(dist_segment) |> round(digits = 1)) |>
+  group_by(date) |>
+  mutate(dist_day_10min = cumsum(dist_segment) |> round(digits = 1)) |> 
+  ungroup()
 ```
 
 ```{r, include=FALSE}
