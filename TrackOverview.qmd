@@ -170,7 +170,7 @@ df_1hour |>
   select(date, time, latitude, longitude, cog, kts, dist_day, dist) |>
   gt::gt() |>
   gt::opt_interactive(use_text_wrapping = FALSE) |>
-  gt::cols_width(dplyr::any_of(c("latitude", "longitude")) ~ gt::px(150))
+  gt::cols_width(dplyr::any_of(c("latitude", "longitude")) ~ gt::px(130))
 ```
 
 # COG
