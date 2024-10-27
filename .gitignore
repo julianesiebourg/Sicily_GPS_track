@@ -44,7 +44,7 @@ vignettes/*.pdf
 # pkgdown site
 #docs/
 encrypt.R
-.staticencrypt.json
+.staticrypt.json
 
 # translation temp files
 po/*~
