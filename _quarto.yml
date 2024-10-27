@@ -2,4 +2,3 @@ project:
   type: website
   output-dir: docs
   post-render: encrypt.r
-
