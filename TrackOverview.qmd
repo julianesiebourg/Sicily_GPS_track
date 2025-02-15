@@ -46,44 +46,72 @@ The xml file with the navionics tracks is parsed.
 gpx_parsed <- htmlTreeParse(file = "Sicily2021Tracks", useInternalNodes = TRUE)
 
 coords <- xpathSApply(doc = gpx_parsed, path = "//trkpt", fun = xmlAttrs)
-elevation <- xpathSApply(doc = gpx_parsed, path = "//trkpt/ele", fun = xmlValue)
 date_time <- xpathSApply(doc = gpx_parsed, path = "//trkpt/time", fun = xmlValue)
 speed <- xpathSApply(doc = gpx_parsed, path = "//trkpt/extensions/navionics_speed", fun = xmlValue)
+elevation <- xpathSApply(doc = gpx_parsed, path = "//trkpt/ele", fun = xmlValue)
 
+smoothing_window <- "30 sec"
 
 df <- data.frame(
   lat = as.numeric(coords["lat", ]),
   lon = as.numeric(coords["lon", ]),
-  elevation = as.numeric(elevation),
   date = lubridate::as_date(date_time),
   time = lubridate::parse_date_time(date_time, "Y-m-d*H:M:S") + hours(2), #switch timezone
-  kts = as.numeric(speed) * 1.944) |> # convert from m/s to knots 
+  kts = as.numeric(speed) * 1.944,
+  elevation = as.numeric(elevation)) |> # convert from m/s to knots 
+  mutate(lat_smooth = runner::runner(lat, k = smoothing_window, idx = time,
+                                   f = function(x) median(x, na.rm = TRUE)),
+         lon_smooth = runner::runner(lon, k = smoothing_window, idx = time,
+                                   f = function(x) median(x, na.rm = TRUE))
+         ) |>
   mutate(
-    dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
-  )
+    segments_full = track_distance(lat, lon) / 1852, # convert from meters to nm
+    segments_full_smooth = track_distance(lat_smooth, lon_smooth) / 1852, # convert from meters to nm
+  ) 
+df$segments_full[1] <- 0
+df$segments_full_smooth[1] <- 0
+df <- df |>
+  mutate(dist = cumsum(segments_full) |> round(digits = 1)) |>
+  group_by(date) |>
+  mutate(dist_day = cumsum(segments_full) |> round(digits = 1)) |> 
+  ungroup() |>
+  mutate(dist_sm = cumsum(segments_full_smooth) |> round(digits = 1)) |>
+  group_by(date) |>
+  mutate(dist_day_sm = cumsum(segments_full_smooth) |> round(digits = 1)) |> 
+  ungroup()
+# some success smoothing GPS points
+# For each point: take all points received within 5 seconds of that point, calculate median of latitude and longitude individually, then use median values as latitude and longitude for that point. This generally gives a straight walk along a sidewalk. For driving, it clips corners, though.
+
 # outlier check
-outlier <- which(df$dist_segment > .5)
+outlier <- which(df$segments_full > .5)
 outlier_area <- c(outlier, outlier-1) |> sort()
 
 df_1min <- df |>
   dplyr::filter(second(time) < 1) |>
-  mutate(cog = track_bearing(lat, lon),
+  mutate(cog = track_bearing(lat_smooth, lon_smooth),
          cog = ifelse(cog < 0, cog + 360, cog)
   ) |>
   mutate(
-    dist_segment = track_distance(lat, lon) / 1852, # convert from meters to nm
+    segment = track_distance(lat, lon) / 1852, # convert from meters to nm
+    segment_sm = track_distance(lat_smooth, lon_smooth) / 1852, # convert from meters to nm
   )
-df_1min$dist_segment[1] <- 0
+df_1min$segment[1] <- 0
+df_1min$segment_sm[1] <- 0
 df_1min <- df_1min |>
-  mutate(dist = cumsum(dist_segment) |> round(digits = 1)) |>
+  mutate(dist = cumsum(segment) |> round(digits = 1)) |>
   group_by(date) |>
-  mutate(dist_day = cumsum(dist_segment) |> round(digits = 1)) |> 
+  mutate(dist_day = cumsum(segment) |> round(digits = 1)) |> 
+  ungroup() |>
+  mutate(dist_sm = cumsum(segment_sm) |> round(digits = 1)) |>
+  group_by(date) |>
+  mutate(dist_day_sm = cumsum(segment_sm) |> round(digits = 1)) |> 
   ungroup()
 
 df_10min <- df_1min |>
   dplyr::filter(second(time) <1, minute(time) %% 10 == 0) |>
-  mutate(cog = track_bearing(lat, lon),
+  mutate(cog = track_bearing(lat_smooth, lon_smooth),
          cog = ifelse(cog < 0, cog + 360, cog)) 
+
 ```
 
 ```{r, include=FALSE}
@@ -154,6 +182,26 @@ leaflet() |>
     icon = awesomeIcons(icon = 'ios-close', iconColor = 'black',
                         library = 'ion', markerColor = 'red'))
 ```
+
+
+## Smoothed data
+
+```{r full_map}
+#| fig-width: 5
+#| fig-height: 5.5
+
+leaflet() |>
+  addTiles() |>
+  addPolylines(data = df, lat = ~lat_smooth, lng = ~lon, 
+               color = "#000000", opacity = 0.8, weight = 3) |>
+  leaflet::addAwesomeMarkers(
+    data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour)) |>
+  leaflet::addAwesomeMarkers(
+    data = df[outlier_area, ], lat = ~lat, lng = ~lon,
+    label = ~as.character(hour(time)), 
+    icon = awesomeIcons(icon = 'ios-close', iconColor = 'black',
+                        library = 'ion', markerColor = 'red'))
+```
 :::
 
 # Hourly log book
@@ -185,6 +233,7 @@ df_1hour |>
 
 df_10min |>
   ggplot(aes(x = time, y = cog)) + geom_point() + geom_line()
+
 ```
 
 ## 1 min thinning
@@ -227,6 +276,10 @@ missing segments
 #| fig.width: 8
 #| fig.height: 3
 df |>
-  ggplot(aes(x = time, y = dist_segment)) + geom_point() + geom_line()
+  ggplot(aes(x = time, y = segments_full)) + geom_point() + geom_line()
+
+df |>
+  ggplot(aes(x = time, y = segments_full_smooth)) + geom_point() + geom_line()
+
 ```
 :::
