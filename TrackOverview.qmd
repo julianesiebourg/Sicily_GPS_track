@@ -17,6 +17,7 @@ library(XML)
 library(lubridate)
 library(celestial)
 library(leaflet)
+library(leaflet.extras)
 library(tidyverse)
 library(traipse)
 
@@ -26,8 +27,9 @@ theme_set(theme_bw())
 Navionics GPs track of the Sicily eolian island trip.
 
 ::: panel-tabset
-## Hide {-}
-## Track loading and data formatting {-}
+## Hide {.unnumbered}
+
+## Track loading and data formatting {.unnumbered}
 
 The xml file with the navionics tracks is parsed.
 
@@ -87,10 +89,10 @@ outlier <- which(df$segments_full > .5)
 outlier_area <- c(outlier, outlier-1) |> sort()
 
 df_1min <- df |>
-  dplyr::filter(second(time) < 1) |>
-  mutate(cog = track_bearing(lat_smooth, lon_smooth),
-         cog = ifelse(cog < 0, cog + 360, cog)
-  ) |>
+  mutate(time = lubridate::round_date(time, "1 minute")) |> 
+  group_by(time) |> slice(1) |> ungroup() |>
+  mutate(cog = track_bearing(lon_smooth, lat_smooth),
+        cog = ifelse(cog < 0, cog + 360, cog)) |>
   mutate(
     segment = track_distance(lat, lon) / 1852, # convert from meters to nm
     segment_sm = track_distance(lat_smooth, lon_smooth) / 1852, # convert from meters to nm
@@ -108,10 +110,10 @@ df_1min <- df_1min |>
   ungroup()
 
 df_10min <- df_1min |>
-  dplyr::filter(second(time) <1, minute(time) %% 10 == 0) |>
-  mutate(cog = track_bearing(lat_smooth, lon_smooth),
-         cog = ifelse(cog < 0, cog + 360, cog)) 
-
+  mutate(time = lubridate::round_date(time, "10 minutes")) |> 
+  group_by(time) |> slice(1) |> ungroup() |>
+  mutate(cog10 = track_bearing(lon_smooth, lat_smooth),
+         cog10 = ifelse(cog < 0, cog + 360, cog))
 ```
 
 ```{r, include=FALSE}
@@ -133,16 +135,13 @@ df_1hour <- df_10min |> mutate(hour = hour(time)) |>
   group_by(date, hour) |>
   slice(1) |>
   ungroup() |> arrange(time)
-  #dplyr::filter(minute(time) == 0, second(time) < 1) 
 ```
-
 :::
-
 
 # Trip overview
 
-- Blue markers are the positions at the full hour for approximate logbook entries. 
-- Red markers show beginning and end of missing segments.
+-   Blue markers are the positions at the full hour for approximate logbook entries.
+-   Red markers show beginning and end of missing segments.
 
 ::: panel-tabset
 ## Minute wise data
@@ -151,15 +150,35 @@ df_1hour <- df_10min |> mutate(hour = hour(time)) |>
 #| fig-width: 5
 #| fig-height: 5.5
 
+#cols <- RColorBrewer::brewer.pal(df_1hour$date |> unique() |> length(), "Set3")
+cols <- c("darkred", "orange", "lightgreen", "darkgreen", "cadetblue", "blue", "purple")
+names(cols) <- df_1hour$date |> unique()
+
+df_1hour <- df_1hour |>
+  mutate(marker_color = unname(cols[as.character(date)]))
+
+icons <- awesomeIcons(
+  icon = 'circle',
+  iconColor = 'white',
+  library = 'fa',
+  markerColor = df_1hour$marker_color
+)
+
 leaflet() |>
   addTiles() |>
   addPolylines(data = df_1min, lat = ~lat, lng = ~lon, 
                color = "#000000", opacity = 0.8, weight = 3) |>
   leaflet::addAwesomeMarkers(
-    data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour(time))) |>
+    data = df_1hour, lat = ~lat, lng = ~lon, 
+    icon = ~icons, 
+    label = ~paste0(as.character(date), " ",
+                   as.character(hour(time)), ":", 
+                   as.character(minute(time)))) |>
   leaflet::addAwesomeMarkers(
     data = df[outlier_area, ], lat = ~lat, lng = ~lon,
-    label = ~as.character(hour(time)), 
+    label = ~paste0(as.character(date), " ",
+                   as.character(hour(time)), ":", 
+                   as.character(minute(time))), 
     icon = awesomeIcons(icon = 'ios-close', iconColor = 'black',
                         library = 'ion', markerColor = 'red')) 
 ```
@@ -175,18 +194,23 @@ leaflet() |>
   addPolylines(data = df, lat = ~lat, lng = ~lon, 
                color = "#000000", opacity = 0.8, weight = 3) |>
   leaflet::addAwesomeMarkers(
-    data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour)) |>
+    data = df_1hour, lat = ~lat, lng = ~lon, 
+    icon = ~icons, 
+    label = ~paste0(as.character(date), " ",
+                   as.character(hour(time)), ":", 
+                   as.character(minute(time)))) |>
   leaflet::addAwesomeMarkers(
     data = df[outlier_area, ], lat = ~lat, lng = ~lon,
-    label = ~as.character(hour(time)), 
+    label = ~paste0(as.character(date), " ",
+                   as.character(hour(time)), ":", 
+                   as.character(minute(time))), 
     icon = awesomeIcons(icon = 'ios-close', iconColor = 'black',
                         library = 'ion', markerColor = 'red'))
 ```
 
-
 ## Smoothed data
 
-```{r full_map}
+```{r smoothed_map}
 #| fig-width: 5
 #| fig-height: 5.5
 
@@ -195,10 +219,16 @@ leaflet() |>
   addPolylines(data = df, lat = ~lat_smooth, lng = ~lon, 
                color = "#000000", opacity = 0.8, weight = 3) |>
   leaflet::addAwesomeMarkers(
-    data = df_1hour, lat = ~lat, lng = ~lon, label = ~as.character(hour)) |>
+    data = df_1hour, lat = ~lat, lng = ~lon, 
+    icon = ~icons, 
+    label = ~paste0(as.character(date), " ",
+                   as.character(hour(time)), ":", 
+                   as.character(minute(time)))) |>
   leaflet::addAwesomeMarkers(
     data = df[outlier_area, ], lat = ~lat, lng = ~lon,
-    label = ~as.character(hour(time)), 
+    label = ~paste0(as.character(date), " ",
+                   as.character(hour(time)), ":", 
+                   as.character(minute(time))), 
     icon = awesomeIcons(icon = 'ios-close', iconColor = 'black',
                         library = 'ion', markerColor = 'red'))
 ```
@@ -250,7 +280,7 @@ df_1min |>
 
 # Distance
 
-Checking Cumulative Miles in total and per day. The full track shows missing segments, marked in red in the full data route above.
+Cumulative miles in total and per day. 
 
 ::: panel-tabset
 ## 10 min thinning
@@ -267,9 +297,9 @@ df_10min |>
   ggplot(aes(x = time, y = dist_day)) + geom_point() + geom_line()
 ```
 
-## full data
+## segments in full data
 
-missing segments
+The full track shows missing segments, marked in red in the full data route above.
 
 ```{r distance_full}
 #| warning: false
